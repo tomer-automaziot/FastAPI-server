@@ -1,0 +1,197 @@
+{
+  "name": "Excel Image Extractor - Priority Integration",
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-excel",
+              "leftValue": "={{ $json.attachments[0]?.filename }}",
+              "rightValue": ".xlsx",
+              "operator": {
+                "type": "string",
+                "operation": "endsWith"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "filter-excel",
+      "name": "Has Excel Attachment?",
+      "type": "n8n-nodes-base.if",
+      "position": [620, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR-RAILWAY-URL.railway.app/extract",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "attachment_0"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "extract-images",
+      "name": "Extract Images from Excel",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [840, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process extracted images for Priority upload\nconst response = $input.first().json;\n\nif (!response.success || response.image_count === 0) {\n  return [{ json: { error: 'No images extracted', response } }];\n}\n\n// Get PRDI from previous workflow context (adjust path as needed)\nconst prdi = $('Get PRDI').first().json.PRDI;\n\nconst results = response.images.map((img, idx) => ({\n  json: {\n    // For Priority EXTFILES_SUBFORM\n    EXTFILENAME: `supplier_image_${idx + 1}.${img.format}`,\n    EXTFILEDATA: img.data_uri,\n    // Metadata\n    image_index: img.index,\n    sheet: img.sheet,\n    cell: img.cell,\n    format: img.format,\n    // Reference to parent record\n    PRDI: prdi\n  }\n}));\n\nreturn results;"
+      },
+      "id": "prepare-priority",
+      "name": "Prepare for Priority Upload",
+      "type": "n8n-nodes-base.code",
+      "position": [1060, 200]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-images",
+      "name": "Process Each Image",
+      "type": "n8n-nodes-base.splitInBatches",
+      "position": [1280, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://crazy.macomp.vip/odata/Priority/tabmob.dll/automaziot/PRDITEMS('{{ $('Get PRDI').first().json.PRDI }}')/EXTFILES_SUBFORM",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"EXTFILENAME\": \"{{ $json.EXTFILENAME }}\",\n  \"EXTFILEDATA\": \"{{ $json.EXTFILEDATA }}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "upload-priority",
+      "name": "Upload to Priority EXTFILES",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1500, 200]
+    },
+    {
+      "parameters": {},
+      "id": "start",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Alternative: Convert binary to base64 if multipart doesn't work\nconst binaryData = await this.helpers.getBinaryDataBuffer(0, 'attachment_0');\nconst base64 = binaryData.toString('base64');\n\nreturn [{\n  json: {\n    base64: base64,\n    filename: $binary.attachment_0?.fileName || 'attachment.xlsx'\n  }\n}];"
+      },
+      "id": "binary-to-base64",
+      "name": "Binary to Base64 (Alternative)",
+      "type": "n8n-nodes-base.code",
+      "position": [840, 400],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR-RAILWAY-URL.railway.app/extract",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "extract-base64",
+      "name": "Extract (Base64 Method)",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1060, 400],
+      "disabled": true
+    }
+  ],
+  "connections": {
+    "Has Excel Attachment?": {
+      "main": [
+        [
+          {
+            "node": "Extract Images from Excel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Images from Excel": {
+      "main": [
+        [
+          {
+            "node": "Prepare for Priority Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare for Priority Upload": {
+      "main": [
+        [
+          {
+            "node": "Process Each Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Each Image": {
+      "main": [
+        [
+          {
+            "node": "Upload to Priority EXTFILES",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Has Excel Attachment?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Binary to Base64 (Alternative)": {
+      "main": [
+        [
+          {
+            "node": "Extract (Base64 Method)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
