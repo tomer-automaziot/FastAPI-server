@@ -22,6 +22,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY app.py .
+COPY static/ ./static/
 
 # Create temp directory for LibreOffice
 RUN mkdir -p /tmp/libreoffice && chmod 777 /tmp/libreoffice
